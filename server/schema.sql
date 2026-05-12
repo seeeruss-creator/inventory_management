@@ -45,6 +45,9 @@ CREATE TABLE IF NOT EXISTS transactions (
   FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
 );
 
+-- Add created_at if upgrading from old schema
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
 -- Seed default users with hashed passwords
 -- admin password: admin123 | staff password: staff123
 INSERT IGNORE INTO users (id, username, role, password_hash) VALUES
