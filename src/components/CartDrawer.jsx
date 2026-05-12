@@ -14,9 +14,9 @@ const CartDrawer = ({ open, lines = [], onChangeQty, onRemove, onClose, onChecko
         {totalLines === 0 ? (
           <div style={{ padding: 16, color: 'var(--text-muted)' }}>Cart is empty.</div>
         ) : (
-          <div style={{ paddingTop: 8 }}>
+          <div className="cart-content">
             {lines.map((l) => (
-              <div key={l.product.id} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 80px auto', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+              <div key={l.product.id} className="cart-line">
                 <div>
                   <div style={{ fontWeight: 600 }}>{l.product.name}</div>
                   <div className="category-badge" style={{ display: 'inline-block', marginTop: 4 }}>{l.product.category}</div>
@@ -26,7 +26,7 @@ const CartDrawer = ({ open, lines = [], onChangeQty, onRemove, onClose, onChecko
                 <button className="btn-delete" onClick={() => onRemove(l.product.id)}>Remove</button>
               </div>
             ))}
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <div className="cart-actions">
               <button className="btn-gray" onClick={onClose}>Close</button>
               <div style={{ flex: 1 }} />
               <button className="btn-green" onClick={onCheckout} disabled={busy}>{busy ? 'Processing…' : 'Checkout'}</button>

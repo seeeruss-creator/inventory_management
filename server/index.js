@@ -12,6 +12,25 @@ app.use(express.json());
 
 const hashPassword = (pw) => createHash('sha256').update(String(pw)).digest('hex');
 
+const insertTransaction = async (conn, { itemId, type, quantity, userId }) => {
+  try {
+    await conn.query(
+      'INSERT INTO transactions (item_id, type, quantity, user_id) VALUES (?, ?, ?, ?)',
+      [itemId, type, quantity, userId || null]
+    );
+  } catch (error) {
+    // Backward compatibility for databases where user_id does not exist yet
+    if (error?.code === 'ER_BAD_FIELD_ERROR') {
+      await conn.query(
+        'INSERT INTO transactions (item_id, type, quantity) VALUES (?, ?, ?)',
+        [itemId, type, quantity]
+      );
+      return;
+    }
+    throw error;
+  }
+};
+
 // ── Health ────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
@@ -25,7 +44,7 @@ app.post('/api/login', async (req, res) => {
 
   try {
     const [rows] = await pool.query(
-      'SELECT id, username, role, password_hash FROM users WHERE username = ? LIMIT 1',
+      'SELECT id, username, role, password_hash, password FROM users WHERE username = ? LIMIT 1',
       [username]
     );
     if (!rows.length) return res.status(404).json({ message: 'User not found' });
@@ -33,7 +52,9 @@ app.post('/api/login', async (req, res) => {
     const user = rows[0];
     const hashed = hashPassword(password);
 
-    if (hashed !== user.password_hash) {
+    const matchedByHash = !!user.password_hash && hashed === user.password_hash;
+    const matchedByLegacy = !!user.password && (password === user.password || hashed === user.password);
+    if (!matchedByHash && !matchedByLegacy) {
       return res.status(401).json({ message: 'Incorrect password' });
     }
 
@@ -75,10 +96,21 @@ app.post('/api/staff', roleGuard('admin'), async (req, res) => {
   if (password.length < 4) return res.status(400).json({ message: 'Password must be at least 4 characters' });
 
   try {
-    const [result] = await pool.query(
-      'INSERT INTO users (username, role, password_hash) VALUES (?, ?, ?)',
-      [username, role, hashPassword(password)]
-    );
+    const hashed = hashPassword(password);
+    let result;
+    try {
+      [result] = await pool.query(
+        'INSERT INTO users (username, role, password_hash, password) VALUES (?, ?, ?, ?)',
+        [username, role, hashed, hashed]
+      );
+    } catch (insertError) {
+      // Backward compatibility when legacy `password` column is missing
+      if (insertError?.code !== 'ER_BAD_FIELD_ERROR') throw insertError;
+      [result] = await pool.query(
+        'INSERT INTO users (username, role, password_hash) VALUES (?, ?, ?)',
+        [username, role, hashed]
+      );
+    }
     return res.status(201).json({ id: result.insertId, message: `${role} account created` });
   } catch (error) {
     if (error.code === 'ER_DUP_ENTRY') {
@@ -277,7 +309,12 @@ app.post('/api/sales', roleGuard('admin', 'staff'), async (req, res) => {
         await conn.query('UPDATE items SET stock = ? WHERE id = ?', [current - need, row.ingredient_id]);
       }
       // Log product sale
-      await conn.query('INSERT INTO transactions (item_id, type, quantity) VALUES (?, ?, ?)', [productId, 'sale', qty]);
+      await insertTransaction(conn, {
+        itemId: productId,
+        type: 'sale',
+        quantity: qty,
+        userId: req.user?.id
+      });
     } else {
       // Ready-made: deduct finished goods stock directly
       const [prodStock] = await conn.query('SELECT stock FROM items WHERE id = ? FOR UPDATE', [productId]);
@@ -289,7 +326,12 @@ app.post('/api/sales', roleGuard('admin', 'staff'), async (req, res) => {
         return res.status(400).json({ message: 'Insufficient product stock' });
       }
       await conn.query('UPDATE items SET stock = ? WHERE id = ?', [next, productId]);
-      await conn.query('INSERT INTO transactions (item_id, type, quantity) VALUES (?, ?, ?)', [productId, 'sale', qty]);
+      await insertTransaction(conn, {
+        itemId: productId,
+        type: 'sale',
+        quantity: qty,
+        userId: req.user?.id
+      });
     }
     await conn.commit();
     conn.release();
@@ -331,7 +373,12 @@ const changeStock = async (req, res, mode) => {
       return res.status(400).json({ message: 'Insufficient stock' });
     }
     await conn.query('UPDATE items SET stock = ? WHERE id = ?', [next, itemId]);
-    await conn.query('INSERT INTO transactions (item_id, type, quantity) VALUES (?, ?, ?)', [itemId, mode, quantity]);
+    await insertTransaction(conn, {
+      itemId,
+      type: mode,
+      quantity,
+      userId: req.user?.id
+    });
     await conn.commit();
     return res.json({ message: 'Stock updated', stock: next });
   } catch (error) {

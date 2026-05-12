@@ -33,19 +33,30 @@ const DashboardPage = () => {
 
   const loadData = async () => {
     try {
-      const [itemsRes, txRes, accountsRes] = await Promise.all([
+      const requests = [
         api.get('/items'),
         api.get('/transactions'),
-        isAdmin ? api.get('/staff') : Promise.resolve({ data: [] }),
-      ]);
-      const nextItems = Array.isArray(itemsRes.data) ? itemsRes.data : [];
-      const nextTx = Array.isArray(txRes.data) ? txRes.data : [];
-      const nextAccounts = Array.isArray(accountsRes.data) ? accountsRes.data : [];
-      setItems(nextItems);
-      setTransactions(nextTx);
-      if (isAdmin) setAccounts(nextAccounts);
+      ];
+      if (isAdmin) requests.push(api.get('/staff'));
+
+      const [itemsRes, txRes, accountsRes] = await Promise.allSettled(requests);
+
+      if (itemsRes.status === 'fulfilled') {
+        setItems(Array.isArray(itemsRes.value?.data) ? itemsRes.value.data : []);
+      }
+
+      if (txRes.status === 'fulfilled') {
+        setTransactions(Array.isArray(txRes.value?.data) ? txRes.value.data : []);
+      }
+
+      if (isAdmin) {
+        if (accountsRes?.status === 'fulfilled') {
+          setAccounts(Array.isArray(accountsRes.value?.data) ? accountsRes.value.data : []);
+        } else if (accountsRes?.status === 'rejected') {
+          setAccounts([]);
+        }
+      }
     } catch (_e) {
-      // Clear stale UI when API isn't reachable so ghost items don't linger
       setItems([]);
       setTransactions([]);
       if (isAdmin) setAccounts([]);
@@ -102,14 +113,19 @@ const DashboardPage = () => {
   };
 
   const updateStock = async (itemId, quantity, type) => {
-    const item = items.find(i => i.id === itemId);
-    if (type === 'sale' && item && item.item_type === 'product') {
-      await api.post('/sales', { product_id: itemId, quantity: Number(quantity) });
-    } else {
-      const endpoint = type === 'sale' ? '/stock/deduct' : '/stock/add';
-      await api.post(endpoint, { item_id: itemId, quantity: Number(quantity) });
+    try {
+      const qty = Number(quantity) || 1;
+      const item = items.find((i) => i.id === itemId);
+      if (type === 'sale' && item && item.item_type === 'product') {
+        await api.post('/sales', { product_id: itemId, quantity: qty });
+      } else {
+        const endpoint = type === 'sale' ? '/stock/deduct' : '/stock/add';
+        await api.post(endpoint, { item_id: itemId, quantity: qty });
+      }
+      await loadData();
+    } catch (e) {
+      alert(e?.response?.data?.message || 'Failed to update stock');
     }
-    loadData();
   };
 
   const saveItem = async (payload) => {
@@ -212,6 +228,18 @@ const DashboardPage = () => {
     logs: 'Transaction Logs',
     accounts: 'User Accounts',
   };
+  const navItems = isAdmin
+    ? [
+        { id: 'dashboard', label: tabLabel.dashboard },
+        { id: 'inventory', label: tabLabel.inventory },
+        { id: 'logs', label: tabLabel.logs },
+        { id: 'accounts', label: tabLabel.accounts },
+      ]
+    : [
+        { id: 'dashboard', label: tabLabel.dashboard },
+        { id: 'inventory', label: tabLabel.inventory },
+        { id: 'logs', label: tabLabel.logs },
+      ];
 
   return (
     <div className="layout">
@@ -224,7 +252,21 @@ const DashboardPage = () => {
             <h2>{tabLabel[activeTab] || 'Dashboard'}</h2>
             <p>Welcome back, <strong>{user?.username}</strong></p>
           </div>
-          <div className="top-actions">
+          <div className="top-actions mobile-top-actions">
+            <select
+              className="mobile-tab-select"
+              value={activeTab}
+              onChange={(e) => setActiveTab(e.target.value)}
+            >
+              {navItems.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            <button className="btn-logout" onClick={logout}>
+              Sign Out
+            </button>
           </div>
         </header>
 
@@ -446,7 +488,7 @@ const DashboardPage = () => {
                             <div className="staff-role">{acc.role}</div>
                           </div>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <div className="staff-row-actions">
                           {isOnline ? (
                             <span className="badge badge-green">Online</span>
                           ) : (

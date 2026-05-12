@@ -5,11 +5,13 @@ CREATE TABLE IF NOT EXISTS users (
   id INT AUTO_INCREMENT PRIMARY KEY,
   username VARCHAR(50) NOT NULL UNIQUE,
   role ENUM('admin', 'staff') NOT NULL,
+  password VARCHAR(255) NOT NULL DEFAULT '',
   password_hash VARCHAR(64) NOT NULL DEFAULT '',
   last_active TIMESTAMP NULL DEFAULT NULL
 );
 
 -- Add password_hash and last_active if upgrading from old schema (MySQL 8.0+)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password VARCHAR(255) NOT NULL DEFAULT '';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(64) NOT NULL DEFAULT '';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active TIMESTAMP NULL DEFAULT NULL;
 

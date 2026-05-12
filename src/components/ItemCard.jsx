@@ -47,12 +47,17 @@ const ItemCard = ({ item, onSell, onRestock, onDelete, canDelete, onAddToCart, o
             Add to Cart
           </button>
         )}
+        {item.item_type === 'product' && Number(item.has_recipe) > 0 && (
+          <button className="btn-red" onClick={() => onSell(item.id, Number(qty) || 1)}>
+            Sold
+          </button>
+        )}
         {item.item_type === 'product' && Number(item.has_recipe) === 0 && (
           <button className="btn-red" onClick={() => onSell(item.id, Number(qty) || 1)}>
             Sold
           </button>
         )}
-        {(item.item_type === 'ingredient' || (item.item_type === 'product' && Number(item.has_recipe) === 0)) && (
+        {(item.item_type === 'ingredient' || item.item_type === 'product') && (
           <button className="btn-green" onClick={() => onRestock(item.id, Number(qty) || 1)}>
             Restock
           </button>
